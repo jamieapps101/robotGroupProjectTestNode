@@ -7,11 +7,12 @@ from std_msgs.msg import String
 nodeType = '-'
 nodeID = '-'
 nodeName = 'testNode'
-targetTopic = '-'
+targetTopic = '/transport'
 connectedToTopic = False
 pub = None
 sub = None
 
+testMessage = "3141022062(1,1.9544444444444444,0.8470588235294118,0.036680787756651845)ab8789e45d34efd7512e9f71d754793a7169f1e652f1f3f2827665db93eecc9b"
 
 def receiveMessage(data):
     ## get message
@@ -20,28 +21,50 @@ def receiveMessage(data):
         # echo message
         print(inputString)
         # check structure
-        if(length(inputString) > 8):
-            commandDataLength = int(inputString[4])
-            if(length(inputString) == (7+commandDataLength)):
-                targetNodeType = inputString[0]
-                targetNodeID = inputString[1]
-                sourceNodeType = inputString[2]
-                sourceNodeID = inputString[3]
-                commandData = inputString[5:(5+commandDataLength)]
+        if(len(inputString) > 11):
+            targetNodeType = inputString[0]
+            print("targetNodeType: {}".format(targetNodeType))
+            targetNodeID = inputString[1]
+            print("targetNodeID {}".format(targetNodeID))
+            sourceNodeType = inputString[2]
+            print("sourceNodeType {}".format(sourceNodeType))
+            sourceNodeID = inputString[3]
+            print("sourceNodeID {}".format(sourceNodeID))
+            commandType = inputString[4:7]
+            commandDataLength = int(inputString[7:10])
+            print("commandDataLength {}".format(commandDataLength))
+            commandData = inputString[5:(5+commandDataLength)]
+            if(len(inputString) == (136+commandDataLength)):
+                print("commandData {}".format(commandData))
+                print("checksum {}".format(checksum))
+
+                checksum = inputString[(5+commandDataLength):]
                 m = hashlib.sha256()
                 m.update(commandData)
-                hashResult = m.hexdigest()
-
+                hashResult = str(m.hexdigest())
+                if(hashResult == checksum):
+                    print("aaaah fuck theres a problem, print everything")
+                    print(targetNodeType)
+                    print(targetNodeID)
+                    print(sourceNodeType)
+                    print(sourceNodeID)
+                    print(commandData)
+                    print(checksum)
                 # check byte count
 
                 # check sha256
                 # highlight problems
             else:
                 print("received data too short")
+                print("actualLength {}".format(len(inputString)))
         else:
             print("received data too short")
     else:
         print("recived data incorrect type, ie not string")
+    sub.unregister()
+    #sub = None
+    pub.unregister()
+    #pub = None
 
 
 
@@ -102,6 +125,23 @@ while (True):
         pass
 
     if (inputString == "setTopic" and dealtWith == 0):
+        if connectedToTopic == False:
+            print("type name of topic to connect to, eg '/control' ")
+            print("type '-' to cancel or leave blank")
+            inputString = input(">>>>")
+            if(inputString != ''):
+                targetTopic = inputString
+            else:
+                pass
+        else:
+            print("currently connected to a topic, please disconnect first")
+        dealtWith = 1
+        pass
+
+    if (inputString == "help" and dealtWith == 0):
+        commandsList = ['help', 'setTopic', 'disconnectTopic', 'connectTopic', 'sendMessage']
+        for command in commandsList:
+            print(command)
         dealtWith = 1
         pass
 
@@ -109,6 +149,9 @@ while (True):
         print("Exiting")
         dealtWith = 1
         break;
+
+    if (inputString == "" and dealtWith == 0):
+        dealtWith = 1
 
     if (dealtWith == 0):
         print("Input not recognised")
