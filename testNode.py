@@ -131,7 +131,8 @@ while (True):
 
         #check this is number
         stringToSend = str(targetNodeType)+str(targetNodeID)+str(nodeType)+str(nodeID)
-        stringToSend = stringToSend+str(headerDefInputString)
+        stringToSend = stringToSend+str(headerDefInputString)+Length3Digit(len(dataStringInputString))+dataStringInputString
+
         m = hashlib.sha256()
         m.update(stringToSend.encode("utf-8"))
         hashResult = str(m.hexdigest())
