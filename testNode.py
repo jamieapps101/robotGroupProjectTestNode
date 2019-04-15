@@ -6,11 +6,14 @@ from std_msgs.msg import String
 
 nodeType = '-'
 nodeID = '-'
+targetNodeType = '-'
+targetNodeID = '-'
 nodeName = 'testNode'
 targetTopic = '/transport'
 connectedToTopic = False
 pub = None
 sub = None
+lastMessage = ""
 
 testMessage = "3141022062(1,1.9544444444444444,0.8470588235294118,0.036680787756651845)ab8789e45d34efd7512e9f71d754793a7169f1e652f1f3f2827665db93eecc9b"
 
@@ -19,58 +22,54 @@ def receiveMessage(data):
     inputString = data.data
     if type(inputString) == type("testString"):
         # echo message
-        print(inputString)
-        # check structure
-        if(len(inputString) > 11):
-            targetNodeType = inputString[0]
-            print("targetNodeType: {}".format(targetNodeType))
-            targetNodeID = inputString[1]
-            print("targetNodeID {}".format(targetNodeID))
-            sourceNodeType = inputString[2]
-            print("sourceNodeType {}".format(sourceNodeType))
-            sourceNodeID = inputString[3]
-            print("sourceNodeID {}".format(sourceNodeID))
-            commandType = inputString[4:7]
-            commandDataLength = int(inputString[7:10])
-            print("commandDataLength {}".format(commandDataLength))
-            commandData = inputString[5:(5+commandDataLength)]
-            if(len(inputString) == (136+commandDataLength)):
-                print("commandData {}".format(commandData))
-                print("checksum {}".format(checksum))
+        if(inputString != lastMessage):
+            print("")
+            print("new message from \"{}\"".format(targetTopic))
+            print(inputString)
+            # check structure
+            if(len(inputString) > 11):
+                targetNodeType = inputString[0]
+                print("targetNodeType: {}".format(targetNodeType))
+                targetNodeID = inputString[1]
+                print("targetNodeID {}".format(targetNodeID))
+                sourceNodeType = inputString[2]
+                print("sourceNodeType {}".format(sourceNodeType))
+                sourceNodeID = inputString[3]
+                print("sourceNodeID {}".format(sourceNodeID))
+                commandType = inputString[4:7]
+                print("commandType {}".format(commandType))
+                commandDataLength = int(inputString[7:10])
+                print("commandDataLength {}".format(commandDataLength))
+                commandData = inputString[10:(10+commandDataLength)]
+                if(len(inputString) == (10+64+commandDataLength)):
+                    print("commandData {}".format(commandData))
 
-                checksum = inputString[(5+commandDataLength):]
-                m = hashlib.sha256()
-                m.update(commandData)
-                hashResult = str(m.hexdigest())
-                if(hashResult == checksum):
-                    print("aaaah fuck theres a problem, print everything")
-                    print(targetNodeType)
-                    print(targetNodeID)
-                    print(sourceNodeType)
-                    print(sourceNodeID)
-                    print(commandData)
-                    print(checksum)
-                # check byte count
-
-                # check sha256
-                # highlight problems
+                    checksum = inputString[(10+commandDataLength):]
+                    m = hashlib.sha256()
+                    m.update(commandData.encode("utf-8"))
+                    hashResult = str(m.hexdigest())
+                    print("checksum {}".format(checksum))
+                    if(hashResult != checksum):
+                        print("aaaah fuck theres a problem, print everything")
+                        print(targetNodeType)
+                        print(targetNodeID)
+                        print(sourceNodeType)
+                        print(sourceNodeID)
+                        print(commandData)
+                        print("received checksum: {}".format(checksum))
+                        print("calculated checksum: {}".format(hashResult))
+                    else:
+                        print("message clean")
+                    #print(">>")
+                else:
+                    print("received data too short")
+                    print("actualLength {}".format(len(inputString)))
             else:
                 print("received data too short")
-                print("actualLength {}".format(len(inputString)))
         else:
-            print("received data too short")
+            print("sent message received on topic")
     else:
         print("recived data incorrect type, ie not string")
-    sub.unregister()
-    #sub = None
-    pub.unregister()
-    #pub = None
-
-
-
-
-
-
 
 while (True):
     inputString = input(">>")
@@ -78,23 +77,64 @@ while (True):
 
     if (inputString == "sendMessage" and dealtWith == 0):
         dealtWith = 1
-        print("header def")
-        headerDefInputString = input(">>")
+        if nodeType == '-':
+            print("please set local node type")
+            continue
+
+        if nodeID == '-':
+            print("please set local node type")
+            continue
+        print("target node type")
+        targetNodeType = int(input(">>>>"))
+        if(targetNodeType < 0 or targetNodeType > 9):
+            print("not a valid input (true values between 0 and 9)")
+            continue
+
+        print("target node ID")
+        targetNodeID = int(input(">>>>"))
+        if(targetNodeID < 0 or targetNodeID > 9):
+            print("not a valid input (true values between 0 and 9)")
+            continue
+
+
+        print("header def (command type)")
+        headerDefInputString = int(input(">>"))
+        if(headerDefInputString < 0 or headerDefInputString > 999):
+            print("not a valid input (true values between 0 and 999)")
+            continue
         #check this is number
         print("data String")
         dataStringInputString = input(">>")
+
         #check this is number
+        stringToSend = str(targetNodeType)+str(targetNodeID)+str(nodeType)+str(nodeID)
+        stringToSend = stringToSend+str(headerDefInputString)
+        m = hashlib.sha256()
+        m.update(stringToSend.encode("utf-8"))
+        hashResult = str(m.hexdigest())
+        stringToSend = stringToSend + str(hashResult)
         stringToSend = "complete me!"
         pub.publish(stringToSend)
 
-    if (inputString == "setownID" and dealtWith == 0):
-        print("set node type: (use "-" as null entry)")
-        nodeTypeInputString = input(">>")
+    if (inputString == "sendTest" and dealtWith == 0):
+        dealtWith = 1
+        stringToSend = testMessage
+        pub.publish(stringToSend)
+
+    if (inputString == "setNode" and dealtWith == 0):
+        print("set node type: (use \"-\" as null entry)")
+        nodeTypeInputString = int(input(">>>>"))
+        if(nodeTypeInputString < 0 or nodeTypeInputString > 9):
+            print("not a valid input (true values between 0 and 9)")
+            continue
+        else:
+            nodeType=nodeTypeInputString
         #check input is valid letter, assign to variable as letter/string
-        print("set node ID: (use "-" as null entry)")
-        nodeIDInputString = input(">>")
+        print("set node ID: (use \"-\" as null entry)")
+        nodeIDInputString = input(">>>>")
         #check input is valid number, assign to variable as letter/string
         dealtWith = 1
+
 
     if (inputString == "connectTopic" and dealtWith == 0):
         if targetTopic != "-":
@@ -114,9 +154,9 @@ while (True):
     if (inputString == "disconnectTopic" and dealtWith == 0):
         if connectedToTopic == True:
             sub.unregister()
-            sub = None
+            #sub = None
             pub.unregister()
-            pub = None
+            #pub = None
             connectedToTopic = False
             pass
         else:
@@ -147,6 +187,9 @@ while (True):
 
     if (inputString == "exit" and dealtWith == 0):
         print("Exiting")
+        if pub != None:
+            sub.unregister()
+            pub.unregister()
         dealtWith = 1
         break;
 
