@@ -87,6 +87,21 @@ while (True):
     inputString = input(">>")
     dealtWith = 0
 
+    if (inputString == "sendBlocks" and dealtWith == 0):
+        dealtWith = 1
+        print("source/dest address, command type")
+        blockA = input(">>")
+        print("Data")
+        blockB = input(">>")
+        stringToSend = blockA + Length3Digit(len(blockB)) + blockB
+        m = hashlib.sha256()
+        m.update(stringToSend.encode("utf-8"))
+        hashResult = str(m.hexdigest())
+        stringToSend = stringToSend + str(hashResult)
+        #stringToSend = "complete me!"
+        pub.publish(stringToSend)
+
+
     if (inputString == "sendMessage" and dealtWith == 0):
         dealtWith = 1
         if nodeType == '-':
