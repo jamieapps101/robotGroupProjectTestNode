@@ -15,6 +15,8 @@ pub = None
 sub = None
 lastMessage = ""
 
+muteEnabled = False
+
 testMessage = "3141022062(1,1.9544444444444444,0.8470588235294118,0.036680787756651845)ab8789e45d34efd7512e9f71d754793a7169f1e652f1f3f2827665db93eecc9b"
 
 def Length3Digit(Length):
@@ -27,58 +29,59 @@ def Length3Digit(Length):
 
 def receiveMessage(data):
     ## get message
-    inputString = data.data
-    if type(inputString) == type("testString"):
-        # echo message
-        if(inputString != lastMessage):
-            print("")
-            print("new message from \"{}\"".format(targetTopic))
-            print(inputString)
-            # check structure
-            if(len(inputString) > 11):
-                targetNodeType = inputString[0]
-                print("targetNodeType: {}".format(targetNodeType))
-                targetNodeID = inputString[1]
-                print("targetNodeID {}".format(targetNodeID))
-                sourceNodeType = inputString[2]
-                print("sourceNodeType {}".format(sourceNodeType))
-                sourceNodeID = inputString[3]
-                print("sourceNodeID {}".format(sourceNodeID))
-                commandType = inputString[4:7]
-                print("commandType {}".format(commandType))
-                commandDataLength = int(inputString[7:10])
-                print("commandDataLength {}".format(commandDataLength))
-                commandData = inputString[10:(10+commandDataLength)]
-                dataToCheckSum = inputString[:(10+commandDataLength)]
-                if(len(inputString) == (10+64+commandDataLength)):
-                    print("commandData {}".format(commandData))
+    if muteEnabled == false:
+        inputString = data.data
+        if type(inputString) == type("testString"):
+            # echo message
+            if(inputString != lastMessage):
+                print("")
+                print("new message from \"{}\"".format(targetTopic))
+                print(inputString)
+                # check structure
+                if(len(inputString) > 11):
+                    targetNodeType = inputString[0]
+                    print("targetNodeType: {}".format(targetNodeType))
+                    targetNodeID = inputString[1]
+                    print("targetNodeID {}".format(targetNodeID))
+                    sourceNodeType = inputString[2]
+                    print("sourceNodeType {}".format(sourceNodeType))
+                    sourceNodeID = inputString[3]
+                    print("sourceNodeID {}".format(sourceNodeID))
+                    commandType = inputString[4:7]
+                    print("commandType {}".format(commandType))
+                    commandDataLength = int(inputString[7:10])
+                    print("commandDataLength {}".format(commandDataLength))
+                    commandData = inputString[10:(10+commandDataLength)]
+                    dataToCheckSum = inputString[:(10+commandDataLength)]
+                    if(len(inputString) == (10+64+commandDataLength)):
+                        print("commandData {}".format(commandData))
 
-                    checksum = inputString[(10+commandDataLength):]
-                    m = hashlib.sha256()
-                    m.update(dataToCheckSum.encode("utf-8"))
-                    hashResult = str(m.hexdigest())
-                    print("checksum {}".format(checksum))
-                    if(hashResult != checksum):
-                        print("aaaah fuck theres a problem, print everything")
-                        print(targetNodeType)
-                        print(targetNodeID)
-                        print(sourceNodeType)
-                        print(sourceNodeID)
-                        print(commandData)
-                        print("received checksum: {}".format(checksum))
-                        print("calculated checksum: {}".format(hashResult))
+                        checksum = inputString[(10+commandDataLength):]
+                        m = hashlib.sha256()
+                        m.update(dataToCheckSum.encode("utf-8"))
+                        hashResult = str(m.hexdigest())
+                        print("checksum {}".format(checksum))
+                        if(hashResult != checksum):
+                            print("aaaah fuck theres a problem, print everything")
+                            print(targetNodeType)
+                            print(targetNodeID)
+                            print(sourceNodeType)
+                            print(sourceNodeID)
+                            print(commandData)
+                            print("received checksum: {}".format(checksum))
+                            print("calculated checksum: {}".format(hashResult))
+                        else:
+                            print("message clean")
+                        #print(">>")
                     else:
-                        print("message clean")
-                    #print(">>")
+                        print("received data too short")
+                        print("actualLength {}".format(len(inputString)))
                 else:
                     print("received data too short")
-                    print("actualLength {}".format(len(inputString)))
             else:
-                print("received data too short")
+                print("sent message received on topic")
         else:
-            print("sent message received on topic")
-    else:
-        print("recived data incorrect type, ie not string")
+            print("recived data incorrect type, ie not string")
 
 while (True):
     inputString = input(">>")
@@ -133,7 +136,7 @@ while (True):
         m.update(stringToSend.encode("utf-8"))
         hashResult = str(m.hexdigest())
         stringToSend = stringToSend + str(hashResult)
-        stringToSend = "complete me!"
+        #stringToSend = "complete me!"
         pub.publish(stringToSend)
         if(targetNodeTypeTemp == True):
             targetNodeType = '-'
@@ -200,6 +203,16 @@ while (True):
                 pass
         else:
             print("currently connected to a topic, please disconnect first")
+        dealtWith = 1
+        pass
+
+    if (inputString == "mute" and dealtWith == 0):
+        muteEnabled = True
+        dealtWith = 1
+        pass
+
+    if (inputString == "unmute" and dealtWith == 0):
+        muteEnabled = False
         dealtWith = 1
         pass
 
