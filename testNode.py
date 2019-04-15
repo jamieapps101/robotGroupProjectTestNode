@@ -19,6 +19,8 @@ muteEnabled = False
 
 testMessage = "3141022062(1,1.9544444444444444,0.8470588235294118,0.036680787756651845)ab8789e45d34efd7512e9f71d754793a7169f1e652f1f3f2827665db93eecc9b"
 
+
+
 def Length3Digit(Length):
     if Length > 100:
         return (str(Length))
@@ -27,9 +29,124 @@ def Length3Digit(Length):
     elif Length > 0:
         return ('00' + str(Length))
 
+def createMessage(messageList):
+    targetNodeType    = str(messageList[0])
+    targetNodeID      = str(messageList[1])
+    sourceNodeType    = str(messageList[2])
+    sourceNodeID      = str(messageList[3])
+    commandType       = str(messageList[4])
+    commandData       = str(messageList[5])
+    commandDataLength = Length3Digit(len(commandData))
+    dataToCheckSum = targetNodeType + targetNodeID + sourceNodeType + sourceNodeID + commandType + commandDataLength + commandData
+    m = hashlib.sha256()
+    m.update(dataToCheckSum.encode("utf-8"))
+    checksum = str(m.hexdigest())
+    dataToCheckSum += checksum
+    return dataToCheckSum
+
+controlNodeMode = False
+initControlNode = False
+controlNodeUIPub = None
+controlNodeUISub = None
+controlNodeGeneralPub = None
+controlNodeGeneralSub = None
+controlNodeVisionPub = None
+controlNodeVisionSub = None
+controlNodeTransportPub = None
+controlNodeTransportSub = None
+transportNodeActive=False
+transportActiveJob=[]
+transportActiveJobIndex=0
+jobSheet = []
+lastMessageReference=dict()
+def UICallback(data):
+    inputString = data.data
+    if controlNodeMode == True:
+        targetNodeType = inputString[0]
+        targetNodeID = inputString[1]
+        sourceNodeType = inputString[2]
+        sourceNodeID = inputString[3]
+        commandType = inputString[4:7]
+        commandDataLength = int(inputString[7:10])
+        commandData = inputString[10:(10+commandDataLength)]
+        dataToCheckSum = inputString[:(10+commandDataLength)]
+        checksum = inputString[(10+commandDataLength):]
+        # get data, validate
+        m = hashlib.sha256()
+        m.update(dataToCheckSum.encode("utf-8"))
+        hashResult = str(m.hexdigest())
+        if(hashResult == checksum and (targetNodeType==5 or targetNodeType==0)): # check the message is valid and for me
+            #check previous log of messages for similarity
+            seenBefore=False
+            #lastMessage = None
+            try:
+                lastMessage = lastMessageReference[sourceNodeType+sourceNodeID]
+                if lastMessage == inputString:
+                    seenBefore = True # we've seen the message before, warn the proceeding code
+                else:
+                    lastMessageReference[sourceNodeType+sourceNodeID] = inputString # we haven't seen this message before, record it
+            except KeyError:
+                lastMessageReference[sourceNodeType+sourceNodeID] = inputString
+            # send ack
+            messageData=[sourceNodeType,sourceNodeID,targetNodeType,targetNodeID,"000",""]
+            messageString = sendMessage(messageData)
+            controlNodeUIPub.publish(messageString)
+            if seenBefore == False: # ie assuming we haven't aready acted on this message
+                if commandType == "006": # ie is the UI give the system a new job
+                    shapesMask=[1,3,5,7]
+                    indexMask=[0,2,4,6]
+                    holeMask=8
+                    commandData
+                    shapes = [commandsData[i] for i in shapesMask] # should be numebrs corresponding to position
+                    index = [commandsData[i] for i in indexMask] # letter corresponding to shape type
+                    hole = [commandsData[i] for i in holeMask] # letter corresponding to hole
+                    # if length
+                    # # Work out the path based on the specifications
+                    # path = []
+                    # # append to path
+                    #
+                    # # append user/job data to the job
+                    # # store path to big vector,
+                    # jobsheet.append(path)
+                    # if transportNodeActive == False and len(jobsheet)==1:
+                    #     transportActiveJob=jobsheet[0] # get oldest job from jobsheet, save to active
+                    #     jobsheet.remove(0) # remove it from job sheet
+                    #     transportNodeActive = True # set node to active
+                    #     transportActiveJobIndex=0
+                    #     #send a message here to vision node to send transportActiveJobIndex path to transport
+                    #     nextProcessingNode = transportActiveJob[transportActiveJobIndex]
+                    #     transportActiveJobIndex += 1
+                    #     messageString =  createMessage([4,1,5,1,"018","(1,"+str(nextProcessingNode)")"])
+                    #     controlNodeVisionPub.publish(messageString)
+
+                if commandType == "003": #ie stop production
+                    pass
+        else:
+            #reject
+            pass
+
+def platformCallback(data):
+        inputString = data.data
+        if controlNodeMode == True:
+            targetNodeType = inputString[0]
+            targetNodeID = inputString[1]
+            sourceNodeType = inputString[2]
+            sourceNodeID = inputString[3]
+            commandType = inputString[4:7]
+            commandDataLength = int(inputString[7:10])
+            commandData = inputString[10:(10+commandDataLength)]
+            dataToCheckSum = inputString[:(10+commandDataLength)]
+            checksum = inputString[(10+commandDataLength):]
+            # get data, validate
+            m = hashlib.sha256()
+            m.update(dataToCheckSum.encode("utf-8"))
+            hashResult = str(m.hexdigest())
+            if(hashResult == checksum and targetNodeType==5): # check the message is valid and for me
+                pass
+
 def receiveMessage(data):
-    ## get message
     if muteEnabled == false:
+        ## get message
         inputString = data.data
         if type(inputString) == type("testString"):
             # echo message
@@ -87,6 +204,27 @@ while (True):
     inputString = input(">>")
     dealtWith = 0
 
+    if (inputString == "controlNodeToggle" and dealtWith == 0):
+        dealtWith = 1
+        if(contolNodeMode == True):
+            print("Control Node deactivated")
+            controlNodeMode = False
+        else:
+            print("Control Node activated")
+            controlNodeMode = True
+            if initControlNode == False:
+                controlNodeVisionPub = rospy.Publisher("/vision", String, queue_size=10)
+                controlNodeUIPub = rospy.Publisher("/UI", String, queue_size=10)
+                controlNodeGeneralPub = rospy.Publisher("/system", String, queue_size=10)
+                controlNodeTransportPub = rospy.Publisher("/transport", String, queue_size=10)
+                rospy.init_node(nodeName)
+                controlNodeVisionPub = rospy.Subscriber("/vision", String, receiveMessage)
+                controlNodeUIPub = rospy.Subscriber("/UI", String, UICallback)
+                controlNodeGeneralSub = rospy.Subscriber("/system", String, receiveMessage)
+                controlNodeTransportSub = rospy.Subscriber("/transport", String, platformCallback)
+                initControlNode = True
+                print("Control node initialised")
+
     if (inputString == "sendBlocks" and dealtWith == 0):
         dealtWith = 1
         print("source/dest address, command type")
@@ -100,7 +238,6 @@ while (True):
         stringToSend = stringToSend + str(hashResult)
         #stringToSend = "complete me!"
         pub.publish(stringToSend)
-
 
     if (inputString == "sendMessage" and dealtWith == 0):
         dealtWith = 1
