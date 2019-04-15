@@ -17,6 +17,14 @@ lastMessage = ""
 
 testMessage = "3141022062(1,1.9544444444444444,0.8470588235294118,0.036680787756651845)ab8789e45d34efd7512e9f71d754793a7169f1e652f1f3f2827665db93eecc9b"
 
+def Length3Digit(Length):
+    if Length > 100:
+        return (str(Length))
+    elif Length > 10:
+        return ('0' + str(Length))
+    elif Length > 0:
+        return ('00' + str(Length))
+
 def receiveMessage(data):
     ## get message
     inputString = data.data
@@ -41,12 +49,13 @@ def receiveMessage(data):
                 commandDataLength = int(inputString[7:10])
                 print("commandDataLength {}".format(commandDataLength))
                 commandData = inputString[10:(10+commandDataLength)]
+                dataToCheckSum = inputString[:(10+commandDataLength)]
                 if(len(inputString) == (10+64+commandDataLength)):
                     print("commandData {}".format(commandData))
 
                     checksum = inputString[(10+commandDataLength):]
                     m = hashlib.sha256()
-                    m.update(commandData.encode("utf-8"))
+                    m.update(dataToCheckSum.encode("utf-8"))
                     hashResult = str(m.hexdigest())
                     print("checksum {}".format(checksum))
                     if(hashResult != checksum):
@@ -78,23 +87,34 @@ while (True):
     if (inputString == "sendMessage" and dealtWith == 0):
         dealtWith = 1
         if nodeType == '-':
-            print("please set local node type")
+            print("please set local node type first")
             continue
 
         if nodeID == '-':
-            print("please set local node type")
-            continue
-        print("target node type")
-        targetNodeType = int(input(">>>>"))
-        if(targetNodeType < 0 or targetNodeType > 9):
-            print("not a valid input (true values between 0 and 9)")
+            print("please set local node type first")
             continue
 
-        print("target node ID")
-        targetNodeID = int(input(">>>>"))
-        if(targetNodeID < 0 or targetNodeID > 9):
-            print("not a valid input (true values between 0 and 9)")
-            continue
+        targetNodeTypeTemp = False
+        if(targetNodeType == '-'):
+            targetNodeTypeTemp = True
+            print("target node type")
+            targetNodeType = int(input(">>>>"))
+            if(targetNodeType < 0 or targetNodeType > 9):
+                print("not a valid input (true values between 0 and 9)")
+                continue
+        else:
+            print("using already set targetNodeType: {}".format(targetNodeType))
+
+        targetNodeIDTemp = False
+        if(targetNodeID == '-'):
+            targetNodeIDTemp = True
+            print("target node ID")
+            targetNodeID = int(input(">>>>"))
+            if(targetNodeID < 0 or targetNodeID > 9):
+                print("not a valid input (true values between 0 and 9)")
+                continue
+        else:
+            print("using already set targetNodeID: {}".format(targetNodeID))
 
 
         print("header def (command type)")
@@ -115,26 +135,31 @@ while (True):
         stringToSend = stringToSend + str(hashResult)
         stringToSend = "complete me!"
         pub.publish(stringToSend)
+        if(targetNodeTypeTemp == True):
+            targetNodeType = '-'
+        if(targetNodeIDTemp == True):
+            targetNodeID = '-'
 
     if (inputString == "sendTest" and dealtWith == 0):
         dealtWith = 1
         stringToSend = testMessage
         pub.publish(stringToSend)
 
-    if (inputString == "setNode" and dealtWith == 0):
+    if (inputString == "setNodeType" and dealtWith == 0):
         print("set node type: (use \"-\" as null entry)")
         nodeTypeInputString = int(input(">>>>"))
         if(nodeTypeInputString < 0 or nodeTypeInputString > 9):
             print("not a valid input (true values between 0 and 9)")
             continue
-        else:
-            nodeType=nodeTypeInputString
-        #check input is valid letter, assign to variable as letter/string
-        print("set node ID: (use \"-\" as null entry)")
-        nodeIDInputString = input(">>>>")
-        #check input is valid number, assign to variable as letter/string
         dealtWith = 1
 
+    if (inputString == "setNodeID" and dealtWith == 0):
+        print("set node ID: (use \"-\" as null entry)")
+        nodeTypeInputString = int(input(">>>>"))
+        if(nodeTypeInputString < 0 or nodeTypeInputString > 9):
+            print("not a valid input (true values between 0 and 9)")
+            continue
+        dealtWith = 1
 
     if (inputString == "connectTopic" and dealtWith == 0):
         if targetTopic != "-":
