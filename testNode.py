@@ -54,6 +54,8 @@ controlNodeUIPub = None
 controlNodeUISub = None
 controlNodeGeneralPub = None
 controlNodeGeneralSub = None
+controlNodeProcessPub = None
+controlNodeProcessSub = None
 controlNodeVisionPub = None
 controlNodeVisionSub = None
 controlNodeTransportPub = None
@@ -64,6 +66,31 @@ transportActiveJobIndex=0
 jobSheet = []
 lastMessageReference=dict()
 toAcknowledgeMessages=[]
+
+def sendMessage(inputData):
+    behaviourChar = inputData[1]
+    auxData = re.findall(":[a-zA-Z]*\)",inputData)
+    auxData = auxData[1:-1]
+    node = None
+    try:
+        node = int(behaviourChar) # behaviourChar is a number, indicating which node to go to next
+        messageString = createMessage([4,1,5,1,"018","(1,"+str(node)+")"])
+        # then send a message to the vision  node to find aa path to next node and guide robot there
+        controlNodeVisionPub.publish(messageString)
+    except ValueError:
+        #behaviourChar is a char, an action for a specific node
+        if behaviourChar == "g": # ie arm grab
+            messageString = createMessage([3,1,5,1,"050",""])
+            controlNodeTransportPub.publish(messageString)
+        if behaviourChar == "d": # ie arm drop
+            messageString = createMessage([3,1,5,1,"051",""])
+            controlNodeTransportPub.publish(messageString)
+        if behaviourChar == "p": # ie process node shape instruction
+            messageString = createMessage([3,1,5,1,"040",auxData])
+            controlNodeProcessPub.publish(messageString)
+        if behaviourChar == "h": # ie activate hole node
+            messageString = createMessage([6,1,5,1,"054",""])
+            controlNodeProcessPub.publish(messageString)
 
 def UICallback(data):
     inputString = data.data
@@ -82,82 +109,59 @@ def UICallback(data):
         m.update(dataToCheckSum.encode("utf-8"))
         hashResult = str(m.hexdigest())
         if(hashResult == checksum and (targetNodeType==5 or targetNodeType==0)): # check the message is valid and for me
-            #check previous log of messages for similarity
-            seenBefore=False
-            #lastMessage = None
-            try:
-                lastMessage = lastMessageReference[sourceNodeType+sourceNodeID]
-                if lastMessage == inputString:
-                    seenBefore = True # we've seen the message before, warn the proceeding code
-                else:
-                    lastMessageReference[sourceNodeType+sourceNodeID] = inputString # we haven't seen this message before, record it
-            except KeyError:
-                lastMessageReference[sourceNodeType+sourceNodeID] = inputString
-            # send ack
-            messageData=[sourceNodeType,sourceNodeID,targetNodeType,targetNodeID,"000",""]
-            messageString = sendMessage(messageData)
-            controlNodeUIPub.publish(messageString)
-            if seenBefore == False: # ie assuming we haven't aready acted on this message
-                if commandType == "006": # ie is the UI give the system a new job
-                    shapesMask=[0,1,2,3]
-                    holeMask=4
-                    #commandData
-                    shapes = [] # should be numebrs corresponding to position
-                    for i in shapesMask:
-                        if(commandData[i] != 'N'):
-                            shapes.append(commandData[i])
+            #if seenBefore == False: # ie assuming we haven't aready acted on this message
+            if commandType == "006": # ie is the UI give the system a new job
+                shapesMask=[0,1,2,3]
+                holeMask=4
+                #emailMask=range(5,commandDataLength)
+                #commandData
+                shapes = [] # should be numebrs corresponding to position
+                for i in shapesMask:
+                    if(commandData[i] != 'N'):
+                        shapes.append(commandData[i])
 
-                    hole = True if (commandData[holeMask]=='H') else False
+                hole = True if (commandData[holeMask]=='H') else False
+                email = str(commandData[5:commandDataLength])
 
-                    # # Work out the path based on the specifications
-                    path = []
-                    path.append("(7:True)") #
-                    if len(shapes) > 0:
-                        path.append("(1:"+''.join(shapes)+")") # to the path, append a node and its job id's in brackets
-                    if(hole==True):
-                        path.append("(6:True)")
-                    path.append("(8:True)")
-                    # prehaps append data regarding user who ordered?
-                    # # append user/job data to the job
-                    # # store path to big vector,
-                    jobsheet.append(path)
-                    #
-                    if transportNodeActive == False and len(jobsheet)==1:
-                        transportActiveJob=jobsheet[0] # get oldest job from jobsheet, save to active
-                        jobsheet.remove(0) # remove it from job sheet
-                        transportNodeActive = True # set node to active
-                        transportActiveJobIndex=0
-                        #send a message here to vision node to send transportActiveJobIndex path to transport
-                        nodeJobSlots=re.findall("\([0-9]:[a-zA-Z]*\)*",transportActiveJob)
-                        nextProcessingNode = nodeJobSlots[transportActiveJobIndex][1]
-                        if (len(nodeJobSlots)-1)==transportActiveJobIndex: # ie are we on the last task for that work peice
-                            transportActiveJobIndex =0
-                            transportNodeActive == False
-                        else:
-                            transportActiveJobIndex += 1
-                        messageString =  createMessage([4,1,5,1,"018","(1,"+str(nextProcessingNode)+")"])
-                        controlNodeVisionPub.publish(messageString)
-                        messageToAck = [int(round(time.time() * 1000)), messageString]
+                # # Work out the path based on the specifications
+                path = []
+                path.append("(7:True)") # send first to materials hopper
+                path.append("(g:true)") # grab materials from
+                if len(shapes) > 0:
+                    path.append("(1:true)") # to the path, append a node and its job id's in brackets, with an instruction for arm to drop and grab after
+                    path.append("(d:true)")
+                    for shape in shapes:#instruct process node to do a thing
+                        path.append("(p:"+str(shape)+")")
+                    path.append("(g:true)")
+                if(hole==True):
+                    path.append("(6:True)(d:true)(h:true)(g:true)") # send to "hole" node
+                path.append("(8:True)(d:true)") # send to finish bucket
+                jobsheet.append(path)
+                #
+                if transportNodeActive == False and len(jobsheet)==1:
+                    transportActiveJob=jobsheet[0] # get oldest job from jobsheet, save to active
+                    jobsheet.remove(0) # remove it from job sheet
+                    transportNodeActive = True # set node to active
+                    transportActiveJobIndex=0
+                    #send a message here to vision node to send transportActiveJobIndex path to transport
+                    nodeJobSlots=re.findall("\([0-9gdph]:[a-zA-Z]*\)*",transportActiveJob) # 0-9 for nodes, gd for grab drop on arm, p for process then shape,h for hole
+                    nextNode = nodeJobSlots[transportActiveJobIndex][1]
+                    # this is new job, so should write to an RFID reader first!
+                    messageString =  createMessage([9,1,5,1,"048",email])
+                    time.sleep(1) # sleep one second to ensure data is writen
 
-                if commandType == "003": #ie stop production
-                    pass
+                    sendMessage(nextNode)# send message here
 
-                if commandType == "000": # ie acknowledge last
-                # remove last message for this sender from the toAcknowledgeMessages list
-                    toRemove = []
-                    for message in toAcknowledgeMessages:
-                        prevMessTargetNodeType = message[1][0]
-                        prevMessTargetNodeID = message[1][1]
-                        prevMessSourceNodeType = message[1][2]
-                        prevMessSourceNodeID = message[1][3]
-                        if((sourceNodeType+sourceNodeID)==(prevMessTargetNodeType+prevMessTargetNodeID)):
-                            # check the ack message source is the same as the archived message target
-                            toRemove.append(message)
-                    for message in toRemove:
-                        toAcknowledgeMessages.remove(message)
-        else:
-            #reject
-            pass
+                    if (len(nodeJobSlots))==transportActiveJobIndex: # ie are we past the last task for that work peice
+                        transportActiveJobIndex =0
+                        transportNodeActive == False
+                    else:
+                        transportActiveJobIndex += 1
+
+
+            if commandType == "003": #ie stop production
+                pass
+
 
 def platformCallback(data):
     inputString = data.data
@@ -176,95 +180,73 @@ def platformCallback(data):
         m.update(dataToCheckSum.encode("utf-8"))
         hashResult = str(m.hexdigest())
         if(hashResult == checksum and (targetNodeType==5 or targetNodeType==0)): # check the message is valid and for me
-            #check previous log of messages for similarity
-            seenBefore=False
-            #lastMessage = None
-            try:
-                lastMessage = lastMessageReference[sourceNodeType+sourceNodeID]
-                if lastMessage == inputString:
-                    seenBefore = True # we've seen the message before, warn the proceeding code
-                else:
-                    lastMessageReference[sourceNodeType+sourceNodeID] = inputString # we haven't seen this message before, record it
-            except KeyError:
-                lastMessageReference[sourceNodeType+sourceNodeID] = inputString
-            # send ack
-            messageData=[sourceNodeType,sourceNodeID,targetNodeType,targetNodeID,"000",""]
-            messageString = sendMessage(messageData)
-            controlNodeUIPub.publish(messageString)
-            if seenBefore == False: # ie assuming we haven't aready acted on this message
-                # need command check referencing message from transport node to control node to indicate finished process,
-                # in which get next processing node for the vision node. send ack to the transport node and store message
-                # to vision node for ack checking
-                ##############################
-                ##############################
-                ##############################
+            if commandType == "043":# ie has the platform just finished what it was doing?
+                #send a message here to vision node to send transportActiveJobIndex path to transport
+                nodeJobSlots=re.findall("\([0-9]:[a-zA-Z]*\)*",transportActiveJob)
+                nextNode = nodeJobSlots[transportActiveJobIndex][1]
+                if (len(nodeJobSlots))!=transportActiveJobIndex: # ie we're currently not past the last slot on the job
+                    sendMessage(nextNode)# send message here
 
-                if commandType == "000": # ie acknowledge last
-                # remove last message for this sender from the toAcknowledgeMessages list
-                    toRemove = []
-                    for message in toAcknowledgeMessages:
-                        prevMessTargetNodeType = message[1][0]
-                        prevMessTargetNodeID = message[1][1]
-                        prevMessSourceNodeType = message[1][2]
-                        prevMessSourceNodeID = message[1][3]
-                        if((sourceNodeType+sourceNodeID)==(prevMessTargetNodeType+prevMessTargetNodeID)):
-                            # check the ack message source is the same as the archived message target
-                            toRemove.append(message)
-                    for message in toRemove:
-                        toAcknowledgeMessages.remove(message)
+                    transportActiveJobIndex += 1
+
+                else: # thatw as the last job on the sheet
+                    transportActiveJobIndex =0
+                    transportNodeActive == False # ok we've finished this job
+                    # check for new tasks here?
+                    if(len(jobsheet) > 0): # if another job on the jobsheet
+                        transportActiveJob=jobsheet[0] # get oldest job from jobsheet, save to active
+                        jobsheet.remove(0) # remove it from job sheet
+                        transportNodeActive = True # set node to active
+                        transportActiveJobIndex=0 # set current index to 0
+                        nodeJobSlots=re.findall("\([0-9]:[a-zA-Z]*\)*",transportActiveJob) # convert string job sheet to list of nodes
+                        nextNode = nodeJobSlots[transportActiveJobIndex][1] # get next processing node
+                        sendMessage(nextNode)# send message here
+                        transportActiveJobIndex += 1
+
+def processingNodeCallback(data):
+        inputString = data.data
+        if controlNodeMode == True: # get your data out
+            targetNodeType = inputString[0]
+            targetNodeID = inputString[1]
+            sourceNodeType = inputString[2]
+            sourceNodeID = inputString[3]
+            commandType = inputString[4:7]
+            commandDataLength = int(inputString[7:10])
+            commandData = inputString[10:(10+commandDataLength)]
+            dataToCheckSum = inputString[:(10+commandDataLength)]
+            checksum = inputString[(10+commandDataLength):]
+            # get data, validate
+            m = hashlib.sha256()
+            m.update(dataToCheckSum.encode("utf-8"))
+            hashResult = str(m.hexdigest())
+            if(hashResult == checksum and (targetNodeType==5 or targetNodeType==0)): # check the message is valid and for me
+                if commandType == "043":# ie has the platform just finished what it was doing?
+                    #send a message here to vision node to send transportActiveJobIndex path to transport
+                    nodeJobSlots=re.findall("\([0-9]:[a-zA-Z]*\)*",transportActiveJob)
+                    nextNode = nodeJobSlots[transportActiveJobIndex][1]
+                    if (len(nodeJobSlots))!=transportActiveJobIndex: # ie we're currently not past the last slot on the job
+                        sendMessage(nextNode)# send message here
+
+                        transportActiveJobIndex += 1
+
+                    else: # thatw as the last job on the sheet
+                        transportActiveJobIndex =0
+                        transportNodeActive == False # ok we've finished this job
+                        # check for new tasks here?
+                        if(len(jobsheet) > 0): # if another job on the jobsheet
+                            transportActiveJob=jobsheet[0] # get oldest job from jobsheet, save to active
+                            jobsheet.remove(0) # remove it from job sheet
+                            transportNodeActive = True # set node to active
+                            transportActiveJobIndex=0 # set current index to 0
+                            nodeJobSlots=re.findall("\([0-9]:[a-zA-Z]*\)*",transportActiveJob) # convert string job sheet to list of nodes
+                            nextNode = nodeJobSlots[transportActiveJobIndex][1] # get next processing node
+                            sendMessage(nextNode)# send message here# send message here
+                            transportActiveJobIndex += 1
 
 
-class RepeatedTimer(object):
-    def __init__(self, interval, function, *args, **kwargs):
-        self._timer     = None
-        self.interval   = interval
-        self.function   = function
-        self.args       = args
-        self.kwargs     = kwargs
-        self.is_running = False
-        self.start()
+def visionNodeCallback():
+    pass
 
-    def _run(self):
-        self.is_running = False
-        self.start()
-        self.function(*self.args, **self.kwargs)
-
-    def start(self):
-        if not self.is_running:
-            self._timer = Timer(self.interval, self._run)
-            self._timer.start()
-            self.is_running = True
-
-    def stop(self):
-        self._timer.cancel()
-        self.is_running = False
-
-# s = sched.scheduler(time.time, time.sleep)
-def resendUponNoAcknowledge():
-    #pass # run through messages not yet acknowledged, if older than 3 seconds, send message again
-    for message in toAcknowledgeMessages: # for each message
-        if message[0]-int(round(time.time() * 1000))>3000: # if the time stamp is older than 3 seconds
-            messTargetNodeType = message[1][0]
-            messTargetNodeID = message[1][1]
-            messSourceNodeType = message[1][2]
-            messSourceNodeID = message[1][3] # get target node to determine which topic to publish to
-            if messTargetNodeType == 4: # ie vision
-                controlNodeVisionPub.publish(message[1])
-
-            if messTargetNodeType == 1: # ie processing
-                pass
-
-            if messTargetNodeType == 2: # ie UI
-                controlNodeUIPub.publish(message[1])
-
-            if messTargetNodeType == 3: # ie platform/transport
-                controlNodeTransportPub.publish(message[1])
-
-rt = RepeatedTimer(1, resendUponNoAcknowledge)
-#     s.enter(1, 1, resendUponNoAcknowledge,()) # run every second, with priority 1, calling this function again
-#
-# s.enter(1, 1, resendUponNoAcknowledge,())
-# s.run()
 
 def receiveMessage(data):
     if muteEnabled == False:
@@ -339,8 +321,10 @@ while (True):
                 controlNodeUIPub = rospy.Publisher("/UI", String, queue_size=10)
                 controlNodeGeneralPub = rospy.Publisher("/system", String, queue_size=10)
                 controlNodeTransportPub = rospy.Publisher("/transport", String, queue_size=10)
+                controlNodeProcessPub = rospy.Publisher("/process", String, queue_size=10)
                 rospy.init_node("controlNode",anonymous=True)
-                controlNodeVisionPub = rospy.Subscriber("/vision", String, receiveMessage)
+                controlNodeProcessSub = rospy.Subscriber("/process", String, processingNodeCallback)
+                controlNodeVisionPub = rospy.Subscriber("/vision", String, visionNodeCallback)
                 controlNodeUIPub = rospy.Subscriber("/UI", String, UICallback)
                 controlNodeGeneralSub = rospy.Subscriber("/system", String, receiveMessage)
                 controlNodeTransportSub = rospy.Subscriber("/transport", String, platformCallback)
@@ -512,7 +496,3 @@ while (True):
     if (dealtWith == 0):
         print("Input not recognised")
         dealtWith = 1
-
-
-
-rt.stop()
