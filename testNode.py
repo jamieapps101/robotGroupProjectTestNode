@@ -21,8 +21,7 @@ lastMessage = ""
 
 muteEnabled = False
 
-testMessage = "3141022062(1,1.9544444444444444,0.8470588235294118,0.036680787756651845)ab8789e45d34efd7512e9f71d754793a7169f1e652f1f3f2827665db93eecc9b"
-
+testMessage = "3141022062(1,1.9544444444444444,0.8470588235294118,0.036680787756651845)9e881901ab741ee6773faa1f2574b2630402678cc271e59f9550ecb0d5e83170"
 
 
 def Length3Digit(Length):
@@ -63,11 +62,13 @@ controlNodeTransportSub = None
 transportNodeActive=False
 transportActiveJob=[]
 transportActiveJobIndex=0
-jobSheet = []
+jobsheet = []
 lastMessageReference=dict()
 toAcknowledgeMessages=[]
 
 def sendMessage(inputData):
+    print(type(inputData))
+    print(inputData)
     behaviourChar = inputData[1]
     auxData = re.findall(":[a-zA-Z]*\)",inputData)
     auxData = auxData[1:-1]
@@ -77,24 +78,35 @@ def sendMessage(inputData):
         messageString = createMessage([4,1,5,1,"018","(1,"+str(node)+")"])
         # then send a message to the vision  node to find aa path to next node and guide robot there
         controlNodeVisionPub.publish(messageString)
+        lastMessageReference["vision"] = messageString
     except ValueError:
         #behaviourChar is a char, an action for a specific node
         if behaviourChar == "g": # ie arm grab
-            messageString = createMessage([3,1,5,1,"050",""])
+            messageString = createMessage([3,1,5,1,"050"," "])
             controlNodeTransportPub.publish(messageString)
+            lastMessageReference["vision"] = messageString
         if behaviourChar == "d": # ie arm drop
-            messageString = createMessage([3,1,5,1,"051",""])
+            messageString = createMessage([3,1,5,1,"051"," "])
             controlNodeTransportPub.publish(messageString)
+            lastMessageReference["transport"] = messageString
         if behaviourChar == "p": # ie process node shape instruction
             messageString = createMessage([3,1,5,1,"040",auxData])
             controlNodeProcessPub.publish(messageString)
+            lastMessageReference["process"] = messageString
         if behaviourChar == "h": # ie activate hole node
-            messageString = createMessage([6,1,5,1,"054",""])
+            messageString = createMessage([6,1,5,1,"054"," "])
             controlNodeProcessPub.publish(messageString)
+            lastMessageReference["process"] = messageString
 
 def UICallback(data):
+    global transportNodeActive
+    global jobsheet
+    global transportActiveJobIndex
+    global transportActiveJob
+    print("Got a UI Call")
     inputString = data.data
     if controlNodeMode == True: # get your data out
+        print("I am a control node!")
         targetNodeType = inputString[0]
         targetNodeID = inputString[1]
         sourceNodeType = inputString[2]
@@ -104,13 +116,18 @@ def UICallback(data):
         commandData = inputString[10:(10+commandDataLength)]
         dataToCheckSum = inputString[:(10+commandDataLength)]
         checksum = inputString[(10+commandDataLength):]
+        print("Got me data")
         # get data, validate
         m = hashlib.sha256()
         m.update(dataToCheckSum.encode("utf-8"))
         hashResult = str(m.hexdigest())
-        if(hashResult == checksum and (targetNodeType==5 or targetNodeType==0)): # check the message is valid and for me
+        print("Hash test: {}".format(hashResult == checksum))
+        print("Target type test: {}".format(targetNodeType=="5" or targetNodeType=="0"))
+        if(hashResult == checksum and (targetNodeType=="5" or targetNodeType=="0")): # check the message is valid and for me
+            print("Well I should probs respond")
             #if seenBefore == False: # ie assuming we haven't aready acted on this message
             if commandType == "006": # ie is the UI give the system a new job
+                print("UI has a job for me!")
                 shapesMask=[0,1,2,3]
                 holeMask=4
                 #emailMask=range(5,commandDataLength)
@@ -119,10 +136,11 @@ def UICallback(data):
                 for i in shapesMask:
                     if(commandData[i] != 'N'):
                         shapes.append(commandData[i])
-
+                print("Shapes: {}".format(shapes))
                 hole = True if (commandData[holeMask]=='H') else False
                 email = str(commandData[5:commandDataLength])
-
+                print("Hole: {}".format(hole))
+                print("email: {}".format(email))
                 # # Work out the path based on the specifications
                 path = []
                 path.append("(7:True)") # send first to materials hopper
@@ -136,20 +154,27 @@ def UICallback(data):
                 if(hole==True):
                     path.append("(6:True)(d:true)(h:true)(g:true)") # send to "hole" node
                 path.append("(8:True)(d:true)") # send to finish bucket
-                jobsheet.append(path)
-                #
+                print("Path: {}".format(path))
+                print("joined path: {}".format("".join(path)))
+                jobsheet.append("".join(path))
+                print("Job sheet:\n  {}".format(jobsheet))
+
                 if transportNodeActive == False and len(jobsheet)==1:
+                    print("abt to distribute job")
                     transportActiveJob=jobsheet[0] # get oldest job from jobsheet, save to active
-                    jobsheet.remove(0) # remove it from job sheet
+                    print("transportActiveJob: {}".format(transportActiveJob))
+                    del jobsheet[0] # remove it from job sheet
                     transportNodeActive = True # set node to active
                     transportActiveJobIndex=0
                     #send a message here to vision node to send transportActiveJobIndex path to transport
                     nodeJobSlots=re.findall("\([0-9gdph]:[a-zA-Z]*\)*",transportActiveJob) # 0-9 for nodes, gd for grab drop on arm, p for process then shape,h for hole
-                    nextNode = nodeJobSlots[transportActiveJobIndex][1]
+                    print("nodeJobSlots: {}".format(nodeJobSlots))
+                    nextNode = nodeJobSlots[transportActiveJobIndex]
+                    print("nextNode: {}".format(nextNode))
                     # this is new job, so should write to an RFID reader first!
                     messageString =  createMessage([9,1,5,1,"048",email])
                     time.sleep(1) # sleep one second to ensure data is writen
-
+                    print("transportActiveJobIndex before: {}".format(transportActiveJobIndex))
                     sendMessage(nextNode)# send message here
 
                     if (len(nodeJobSlots))==transportActiveJobIndex: # ie are we past the last task for that work peice
@@ -157,13 +182,21 @@ def UICallback(data):
                         transportNodeActive == False
                     else:
                         transportActiveJobIndex += 1
-
+                    print("transportActiveJobIndex after: {}".format(transportActiveJobIndex))
 
             if commandType == "003": #ie stop production
                 pass
 
-
 def platformCallback(data):
+    global transportNodeActive
+    global jobsheet
+    global transportActiveJobIndex
+    global lastMessageReference
+    global transportActiveJob
+    if "transport" in lastMessageReference:
+        if lastMessageReference["transport"] == data.data:
+            return
+    print("Got a transport Call")
     inputString = data.data
     if controlNodeMode == True: # get your data out
         targetNodeType = inputString[0]
@@ -179,11 +212,65 @@ def platformCallback(data):
         m = hashlib.sha256()
         m.update(dataToCheckSum.encode("utf-8"))
         hashResult = str(m.hexdigest())
-        if(hashResult == checksum and (targetNodeType==5 or targetNodeType==0)): # check the message is valid and for me
+        if(hashResult == checksum and (targetNodeType=="5" or targetNodeType=="0")): # check the message is valid and for me
+            print("transport callback deciding, commandType: \"{}\"".format(commandType))
             if commandType == "043":# ie has the platform just finished what it was doing?
+                print("I know the platform finished!")
                 #send a message here to vision node to send transportActiveJobIndex path to transport
-                nodeJobSlots=re.findall("\([0-9]:[a-zA-Z]*\)*",transportActiveJob)
-                nextNode = nodeJobSlots[transportActiveJobIndex][1]
+                nodeJobSlots=re.findall("\([0-9gdph]:[a-zA-Z]*\)*",transportActiveJob)
+                nextNode = nodeJobSlots[transportActiveJobIndex]
+                if (len(nodeJobSlots))!=transportActiveJobIndex: # ie we're currently not past the last slot on the job
+                    print("transportActiveJobIndex before: {}".format(transportActiveJobIndex))
+                    print("nodeJobSlots: {}".format(nodeJobSlots))
+                    sendMessage(nextNode)# send message here
+
+                    transportActiveJobIndex += 1
+                    print("transportActiveJobIndex after : {}".format(transportActiveJobIndex))
+
+                else: # thatw as the last job on the sheet
+                    transportActiveJobIndex = 0
+                    transportNodeActive == False # ok we've finished this job
+                    # check for new tasks here?
+                    if(len(jobsheet) > 0): # if another job on the jobsheet
+                        transportActiveJob=jobsheet[0] # get oldest job from jobsheet, save to active
+                        del jobsheet[0] # remove it from job sheet
+                        transportNodeActive = True # set node to active
+                        transportActiveJobIndex=0 # set current index to 0
+                        nodeJobSlots=re.findall("\([0-9]:[a-zA-Z]*\)*",transportActiveJob) # convert string job sheet to list of nodes
+                        nextNode = nodeJobSlots[transportActiveJobIndex] # get next processing node
+                        sendMessage(nextNode)# send message here
+                        transportActiveJobIndex += 1
+
+def processingNodeCallback(data):
+    global transportNodeActive
+    global jobsheet
+    global transportActiveJobIndex
+    global lastMessageReference
+    global transportActiveJob
+    if "process" in lastMessageReference:
+        if lastMessageReference["process"] == data.data:
+            return
+    print("Got a process Call")
+    inputString = data.data
+    if controlNodeMode == True: # get your data out
+        targetNodeType = inputString[0]
+        targetNodeID = inputString[1]
+        sourceNodeType = inputString[2]
+        sourceNodeID = inputString[3]
+        commandType = inputString[4:7]
+        commandDataLength = int(inputString[7:10])
+        commandData = inputString[10:(10+commandDataLength)]
+        dataToCheckSum = inputString[:(10+commandDataLength)]
+        checksum = inputString[(10+commandDataLength):]
+        # get data, validate
+        m = hashlib.sha256()
+        m.update(dataToCheckSum.encode("utf-8"))
+        hashResult = str(m.hexdigest())
+        if(hashResult == checksum and (targetNodeType=="5" or targetNodeType=="0")): # check the message is valid and for me
+            if commandType == "046":# ie has the platform just finished what it was doing
+                #send a message here to vision node to send transportActiveJobIndex path to transport
+                nodeJobSlots=re.findall("\([0-9gdph]:[a-zA-Z]*\)*",transportActiveJob)
+                nextNode = nodeJobSlots[transportActiveJobIndex]
                 if (len(nodeJobSlots))!=transportActiveJobIndex: # ie we're currently not past the last slot on the job
                     sendMessage(nextNode)# send message here
 
@@ -199,54 +286,19 @@ def platformCallback(data):
                         transportNodeActive = True # set node to active
                         transportActiveJobIndex=0 # set current index to 0
                         nodeJobSlots=re.findall("\([0-9]:[a-zA-Z]*\)*",transportActiveJob) # convert string job sheet to list of nodes
-                        nextNode = nodeJobSlots[transportActiveJobIndex][1] # get next processing node
-                        sendMessage(nextNode)# send message here
+                        nextNode = nodeJobSlots[transportActiveJobIndex] # get next processing node
+                        sendMessage(nextNode)# send message here# send message here
                         transportActiveJobIndex += 1
 
-def processingNodeCallback(data):
-        inputString = data.data
-        if controlNodeMode == True: # get your data out
-            targetNodeType = inputString[0]
-            targetNodeID = inputString[1]
-            sourceNodeType = inputString[2]
-            sourceNodeID = inputString[3]
-            commandType = inputString[4:7]
-            commandDataLength = int(inputString[7:10])
-            commandData = inputString[10:(10+commandDataLength)]
-            dataToCheckSum = inputString[:(10+commandDataLength)]
-            checksum = inputString[(10+commandDataLength):]
-            # get data, validate
-            m = hashlib.sha256()
-            m.update(dataToCheckSum.encode("utf-8"))
-            hashResult = str(m.hexdigest())
-            if(hashResult == checksum and (targetNodeType==5 or targetNodeType==0)): # check the message is valid and for me
-                if commandType == "043":# ie has the platform just finished what it was doing?
-                    #send a message here to vision node to send transportActiveJobIndex path to transport
-                    nodeJobSlots=re.findall("\([0-9]:[a-zA-Z]*\)*",transportActiveJob)
-                    nextNode = nodeJobSlots[transportActiveJobIndex][1]
-                    if (len(nodeJobSlots))!=transportActiveJobIndex: # ie we're currently not past the last slot on the job
-                        sendMessage(nextNode)# send message here
-
-                        transportActiveJobIndex += 1
-
-                    else: # thatw as the last job on the sheet
-                        transportActiveJobIndex =0
-                        transportNodeActive == False # ok we've finished this job
-                        # check for new tasks here?
-                        if(len(jobsheet) > 0): # if another job on the jobsheet
-                            transportActiveJob=jobsheet[0] # get oldest job from jobsheet, save to active
-                            jobsheet.remove(0) # remove it from job sheet
-                            transportNodeActive = True # set node to active
-                            transportActiveJobIndex=0 # set current index to 0
-                            nodeJobSlots=re.findall("\([0-9]:[a-zA-Z]*\)*",transportActiveJob) # convert string job sheet to list of nodes
-                            nextNode = nodeJobSlots[transportActiveJobIndex][1] # get next processing node
-                            sendMessage(nextNode)# send message here# send message here
-                            transportActiveJobIndex += 1
-
-
-def visionNodeCallback():
-    pass
-
+def visionNodeCallback(data):
+    global transportNodeActive
+    global jobsheet
+    global transportActiveJobIndex
+    global lastMessageReference
+    global transportActiveJob
+    if "vision" in lastMessageReference:
+        if lastMessageReference["vision"] == data.data:
+            return
 
 def receiveMessage(data):
     if muteEnabled == False:
@@ -324,7 +376,7 @@ while (True):
                 controlNodeProcessPub = rospy.Publisher("/process", String, queue_size=10)
                 rospy.init_node("controlNode",anonymous=True)
                 controlNodeProcessSub = rospy.Subscriber("/process", String, processingNodeCallback)
-                controlNodeVisionPub = rospy.Subscriber("/vision", String, visionNodeCallback)
+                controlNodeVisionSub = rospy.Subscriber("/vision", String, visionNodeCallback)
                 controlNodeUIPub = rospy.Subscriber("/UI", String, UICallback)
                 controlNodeGeneralSub = rospy.Subscriber("/system", String, receiveMessage)
                 controlNodeTransportSub = rospy.Subscriber("/transport", String, platformCallback)
@@ -427,7 +479,7 @@ while (True):
         if targetTopic != "-":
             if connectedToTopic == False:
                 pub = rospy.Publisher(targetTopic, String, queue_size=10)
-                rospy.init_node(nodeName)
+                rospy.init_node(nodeName, anonymous=True)
                 sub = rospy.Subscriber(targetTopic, String, receiveMessage)
                 connectedToTopic = True
                 pass
