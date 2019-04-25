@@ -31,6 +31,8 @@ def Length3Digit(Length):
         return ('0' + str(Length))
     elif Length > 0:
         return ('00' + str(Length))
+    elif Length == 0:
+        return ("000")
 
 def createMessage(messageList):
     targetNodeType    = str(messageList[0])
@@ -39,7 +41,17 @@ def createMessage(messageList):
     sourceNodeID      = str(messageList[3])
     commandType       = str(messageList[4])
     commandData       = str(messageList[5])
+    if type(commandData) != type("text"):
+	commandData=" "
     commandDataLength = Length3Digit(len(commandData))
+    print("targetNodeType: {}".format(targetNodeType))
+    print("targetNodeID: {}".format(targetNodeID))
+    print("sourceNodeType: {}".format(sourceNodeType))
+    print("sourceNodeID: {}".format(sourceNodeID))
+    print("commandType: {}".format(commandType))
+    print("commandDataLength: {}".format(commandDataLength))
+    print("commandData: {}".format(commandData))
+
     dataToCheckSum = targetNodeType + targetNodeID + sourceNodeType + sourceNodeID + commandType + commandDataLength + commandData
     m = hashlib.sha256()
     m.update(dataToCheckSum.encode("utf-8"))
@@ -59,6 +71,8 @@ controlNodeVisionPub = None
 controlNodeVisionSub = None
 controlNodeTransportPub = None
 controlNodeTransportSub = None
+controlNodeRFIDPub = None
+controlNodeRFIDSub = None
 transportNodeActive=False
 transportActiveJob=[]
 transportActiveJobIndex=0
@@ -75,18 +89,18 @@ def sendMessage(inputData):
     node = None
     try:
         node = int(behaviourChar) # behaviourChar is a number, indicating which node to go to next
-        messageString = createMessage([4,1,5,1,"018","(1,"+str(node)+")"])
+        messageString = createMessage([4,1,5,1,"018","("+str(node)+")"])
         # then send a message to the vision  node to find aa path to next node and guide robot there
-        controlNodeVisionPub.publish(messageString)
+        controlNodeTransportPub.publish(messageString)
         lastMessageReference["vision"] = messageString
     except ValueError:
         #behaviourChar is a char, an action for a specific node
         if behaviourChar == "g": # ie arm grab
-            messageString = createMessage([3,1,5,1,"050"," "])
+            messageString = createMessage([4,1,5,1,"050","1"])
             controlNodeTransportPub.publish(messageString)
             lastMessageReference["vision"] = messageString
         if behaviourChar == "d": # ie arm drop
-            messageString = createMessage([3,1,5,1,"051"," "])
+            messageString = createMessage([4,1,5,1,"050","0"])
             controlNodeTransportPub.publish(messageString)
             lastMessageReference["transport"] = messageString
         if behaviourChar == "p": # ie process node shape instruction
@@ -118,7 +132,7 @@ def UICallback(data):
         checksum = inputString[(10+commandDataLength):]
         print("Got me data")
         # get data, validate
-        m = hashlib.sha256()
+        m = hashlib.sha256()# rite to an RFID reader first!
         m.update(dataToCheckSum.encode("utf-8"))
         hashResult = str(m.hexdigest())
         print("Hash test: {}".format(hashResult == checksum))
@@ -172,7 +186,9 @@ def UICallback(data):
                     nextNode = nodeJobSlots[transportActiveJobIndex]
                     print("nextNode: {}".format(nextNode))
                     # this is new job, so should write to an RFID reader first!
-                    messageString =  createMessage([9,1,5,1,"048",email])
+                    messageString =  createMessage([9,1,5,1,"048","".join(commandData)
+                    #createMessage([9,1,5,1,"048",email])
+                    controlNodeRFIDPub.publish(messageString)
                     time.sleep(1) # sleep one second to ensure data is writen
                     print("transportActiveJobIndex before: {}".format(transportActiveJobIndex))
                     sendMessage(nextNode)# send message here
@@ -238,6 +254,12 @@ def platformCallback(data):
                         transportActiveJobIndex=0 # set current index to 0
                         nodeJobSlots=re.findall("\([0-9]:[a-zA-Z]*\)*",transportActiveJob) # convert string job sheet to list of nodes
                         nextNode = nodeJobSlots[transportActiveJobIndex] # get next processing node
+                        print("nextNode: {}".format(nextNode))
+                        # this is new job, so should write to an RFID reader first!
+                        messageString =  createMessage([9,1,5,1,"048","".join(commandData)
+                        #createMessage([9,1,5,1,"048",email])
+                        controlNodeRFIDPub.publish(messageString)
+                        time.sleep(1)
                         sendMessage(nextNode)# send message here
                         transportActiveJobIndex += 1
 
@@ -287,6 +309,12 @@ def processingNodeCallback(data):
                         transportActiveJobIndex=0 # set current index to 0
                         nodeJobSlots=re.findall("\([0-9]:[a-zA-Z]*\)*",transportActiveJob) # convert string job sheet to list of nodes
                         nextNode = nodeJobSlots[transportActiveJobIndex] # get next processing node
+                        print("nextNode: {}".format(nextNode))
+                        # this is new job, so should write to an RFID reader first!
+                        messageString =  createMessage([9,1,5,1,"048","".join(commandData)
+                        #createMessage([9,1,5,1,"048",email])
+                        controlNodeRFIDPub.publish(messageString)
+                        time.sleep(1)
                         sendMessage(nextNode)# send message here# send message here
                         transportActiveJobIndex += 1
 
@@ -314,7 +342,7 @@ def receiveMessage(data):
                 if(len(inputString) > 11):
                     targetNodeType = inputString[0]
                     print("targetNodeType: {}".format(targetNodeType))
-                    targetNodeID = inputString[1]
+                    targecontrolNodeRFIDPubtNodeID = inputString[1]
                     print("targetNodeID {}".format(targetNodeID))
                     sourceNodeType = inputString[2]
                     print("sourceNodeType {}".format(sourceNodeType))
@@ -370,14 +398,15 @@ while (True):
             controlNodeMode = True
             if initControlNode == False:
                 controlNodeVisionPub = rospy.Publisher("/vision", String, queue_size=10)
-                controlNodeUIPub = rospy.Publisher("/UI", String, queue_size=10)
+                controlNodeUIPub = rospy.Publisher("/ordered_item", String, queue_size=10)
                 controlNodeGeneralPub = rospy.Publisher("/system", String, queue_size=10)
                 controlNodeTransportPub = rospy.Publisher("/transport", String, queue_size=10)
                 controlNodeProcessPub = rospy.Publisher("/process", String, queue_size=10)
+                controlNodeRFIDPub = rospy.Publisher("/rfid", String, queue_size=10)
                 rospy.init_node("controlNode",anonymous=True)
                 controlNodeProcessSub = rospy.Subscriber("/process", String, processingNodeCallback)
                 controlNodeVisionSub = rospy.Subscriber("/vision", String, visionNodeCallback)
-                controlNodeUIPub = rospy.Subscriber("/UI", String, UICallback)
+                controlNodeUIPub = rospy.Subscriber("/ordered_item", String, UICallback)
                 controlNodeGeneralSub = rospy.Subscriber("/system", String, receiveMessage)
                 controlNodeTransportSub = rospy.Subscriber("/transport", String, platformCallback)
                 initControlNode = True
