@@ -98,7 +98,7 @@ def sendMessage(inputData):
         if behaviourChar == "g": # ie arm grab
             messageString = createMessage([4,1,5,1,"050","1"])
             controlNodeTransportPub.publish(messageString)
-            lastMessageReference["vision"] = messageString
+            lastMessageReference["transport"] = messageString
         if behaviourChar == "d": # ie arm drop
             messageString = createMessage([4,1,5,1,"050","0"])
             controlNodeTransportPub.publish(messageString)
@@ -108,9 +108,13 @@ def sendMessage(inputData):
             controlNodeProcessPub.publish(messageString)
             lastMessageReference["process"] = messageString
         if behaviourChar == "h": # ie activate hole node
-            messageString = createMessage([6,1,5,1,"054"," "])
+            messageString = createMessage([6,1043,5,1,"051"," "])
             controlNodeProcessPub.publish(messageString)
             lastMessageReference["process"] = messageString
+        if behaviourChar == "r": # ie activate hole node
+            messageString = createMessage([3,1,5,1,"052"," "])
+            controlNodeTransportPub.publish(messageString)
+            lastMessageReference["transport"] = messageString
 
 def UICallback(data):
     global transportNodeActive
@@ -165,6 +169,7 @@ def UICallback(data):
                     for shape in shapes:#instruct process node to do a thing
                         path.append("(p:"+str(shape)+")")
                     path.append("(g:true)")
+                    path.append("(r:true)")
                 if(hole==True):
                     path.append("(6:True)(d:true)(h:true)(g:true)") # send to "hole" node
                 path.append("(8:True)(d:true)") # send to finish bucket
@@ -230,7 +235,7 @@ def platformCallback(data):
         hashResult = str(m.hexdigest())
         if(hashResult == checksum and (targetNodeType=="5" or targetNodeType=="0")): # check the message is valid and for me
             print("transport callback deciding, commandType: \"{}\"".format(commandType))
-            if commandType == "043":# ie has the platform just finished what it was doing?
+            if commandType == "043" or commandType == "053":# ie has the platform just finished what it was doing?
                 print("I know the platform finished!")
                 #send a message here to vision node to send transportActiveJobIndex path to transport
                 nodeJobSlots=re.findall("\([0-9gdph]:[a-zA-Z]*\)*",transportActiveJob)
