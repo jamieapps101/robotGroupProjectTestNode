@@ -186,7 +186,7 @@ def UICallback(data):
                     nextNode = nodeJobSlots[transportActiveJobIndex]
                     print("nextNode: {}".format(nextNode))
                     # this is new job, so should write to an RFID reader first!
-                    messageString =  createMessage([9,1,5,1,"048","".join(commandData)
+                    messageString =  createMessage([9,1,5,1,"048","".join(commandData)])
                     #createMessage([9,1,5,1,"048",email])
                     controlNodeRFIDPub.publish(messageString)
                     time.sleep(1) # sleep one second to ensure data is writen
@@ -256,7 +256,7 @@ def platformCallback(data):
                         nextNode = nodeJobSlots[transportActiveJobIndex] # get next processing node
                         print("nextNode: {}".format(nextNode))
                         # this is new job, so should write to an RFID reader first!
-                        messageString =  createMessage([9,1,5,1,"048","".join(commandData)
+                        messageString =  createMessage([9,1,5,1,"048","".join(commandData)])
                         #createMessage([9,1,5,1,"048",email])
                         controlNodeRFIDPub.publish(messageString)
                         time.sleep(1)
@@ -311,7 +311,7 @@ def processingNodeCallback(data):
                         nextNode = nodeJobSlots[transportActiveJobIndex] # get next processing node
                         print("nextNode: {}".format(nextNode))
                         # this is new job, so should write to an RFID reader first!
-                        messageString =  createMessage([9,1,5,1,"048","".join(commandData)
+                        messageString =  createMessage([9,1,5,1,"048","".join(commandData)])
                         #createMessage([9,1,5,1,"048",email])
                         controlNodeRFIDPub.publish(messageString)
                         time.sleep(1)
